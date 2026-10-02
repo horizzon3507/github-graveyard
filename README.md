@@ -69,7 +69,9 @@ Without OAuth credentials the app works fully in read-only mode and the sign-in 
 | `ANALYSIS_STALE_DAYS` | no | Re-analysis interval (default 14) |
 | `ANALYSIS_MAX_CONCURRENCY` | no | Concurrent analyses per process (default 2) |
 | `GITHUB_CACHE_TTL_SECONDS` | no | Default response cache TTL (default 21600) |
-| `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | no | Optional AI summaries, see [AI providers](#ai-providers) |
+| `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | no | Optional instance-wide AI for README summaries, see [AI providers](#ai-providers) |
+| `ENCRYPTION_KEY` | for "Your AI" | Long random string (`openssl rand -base64 32`) used to encrypt visitors' AI credentials and derive the host id. Keep it stable |
+| `CHATGPT_PLAN_ENABLED` | no | `true` enables "Continue with ChatGPT" (needs `ENCRYPTION_KEY`). Off by default, see [Your AI](#your-ai-chatgpt-plan-or-your-own-key) |
 
 ## Scripts
 
@@ -223,11 +225,27 @@ The `analysis/` layer has no I/O: `analyzeRepository(input)` takes collected dat
 
 ### AI providers
 
-AI is optional and off by default; the heuristic summary (first meaningful README paragraph) is used otherwise. `AIProvider` (`src/providers/ai/types.ts`) is a one-method interface, so the app is not tied to any vendor. Included: an OpenAI-compatible provider (OpenAI, Ollama, LM Studio, vLLM and llama.cpp via `AI_BASE_URL`), Anthropic, and Gemini. Only the OpenAI-compatible request shape is exercised by tests; the Anthropic and Gemini adapters are thin `fetch` wrappers you should smoke-test with your key. Set `AI_PROVIDER` to `openai`, `anthropic`, `gemini` or `local`.
+AI is optional and off by default; the scores and findings never use it. `AIProvider` (`src/providers/ai/types.ts`) is a one-method interface, so the app is not tied to any vendor. Included: an OpenAI-compatible provider (OpenAI, Groq, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp), Anthropic, Gemini, and a ChatGPT-plan provider.
+
+- **Instance-wide (operator)**: set `AI_PROVIDER` (`openai`, `anthropic`, `gemini`, `local`) with `AI_API_KEY` to have the README summary rewritten by a model. Without it, the first meaningful README paragraph is used.
+- **Per visitor** (below): each person connects their own AI and uses it for their own requests.
+
+### Your AI: ChatGPT plan or your own key
+
+`/settings/ai` lets any visitor connect an AI that **runs on their own account, never the site's**, and unlocks **Generate AI insight** on repository pages: a short verdict (worth reviving? for whom? first three steps) written from the analysis facts only.
+
+1. **Continue with ChatGPT**: [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source) for open-source apps. The user authorizes this app to use their ChatGPT plan for Responses API requests (no API key, no access to conversations). The server registers a client with `client_id=dynamic_agent_client`, a stable host id, PKCE and a verified ID token, stores the tokens **encrypted** (AES-256-GCM, `ENCRYPTION_KEY`), refreshes them under a database lock, revokes them on disconnect, and streams `POST https://api.openai.com/v1/responses` with `store: false`.
+   - *Running locally*: open the app at `http://127.0.0.1:3000` (not `localhost`). The browser comes back to `/auth/callback` and finishes by itself.
+   - *Running on a remote server*: the required `127.0.0.1` callback cannot reach the server, so after approving in ChatGPT you paste the address the browser ended on and the server finishes the exchange.
+2. **Bring your own API key**: OpenAI, Anthropic, Gemini, Groq (free tier) or OpenRouter (free models). Endpoints are fixed presets (no arbitrary base URLs, which would be an SSRF vector). The key is verified with a tiny request, then stored encrypted.
+
+Connections are tied to an `HttpOnly` cookie holding a random secret (only its hash is stored), not to a GitHub account, so they work without signing in.
+
+> **ChatGPT plan usage is gated behind `CHATGPT_PLAN_ENABLED=true`, off by default.** OpenAI documents this sign-in for open-source and locally hosted apps, and asks teams that want to offer it from a paid or remotely hosted app to apply through its interest form. If you run a public multi-user instance, check that you are covered before enabling it. API-key mode has no such restriction. Anthropic and Gemini adapters are thin `fetch` wrappers that have not been run against the live APIs; the ChatGPT flow was verified up to OpenAI's login page (authorization parameters accepted) but a full sign-in needs a real ChatGPT account.
 
 ## Security
 
-- The GitHub token, OAuth secret and cron secret exist only in server code. The production bundle was scanned for them (sentinel values never appear in `.next/static` or in rendered HTML).
+- The GitHub token, OAuth secret, cron secret and visitors' AI credentials exist only in server code (AI credentials are encrypted at rest). The production bundle was scanned for them (sentinel values never appear in `.next/static` or in rendered HTML).
 - URL and input validation with strict patterns (`src/lib/validation.ts`), Zod schemas on every body, query filters parsed defensively.
 - State-changing routes check `Origin` and use `SameSite=Lax` cookies; OAuth uses a random `state` and only same-site `next` paths.
 - Per-IP rate limits on public endpoints, atomic analysis claims, and a hard cap on concurrent analyses.
