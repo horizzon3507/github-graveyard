@@ -84,7 +84,11 @@ export interface CallbackParams {
 export function parseCallbackUrl(input: string, expectedRedirectUri: string): CallbackParams {
   let url: URL;
   try {
-    url = new URL(input.trim());
+    const cleaned = input
+      .trim()
+      .replace(/^["'<]+|["'>]+$/g, "")
+      .replace(/&amp;/gi, "&");
+    url = new URL(cleaned);
   } catch {
     throw new AppError("invalid_input", "That doesn't look like a URL. Paste the full address from the browser's address bar.");
   }

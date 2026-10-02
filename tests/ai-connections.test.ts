@@ -56,6 +56,7 @@ describe("ChatGPT sign-in", () => {
   it("only accepts the exact loopback callback shape", () => {
     const expected = localRedirectUri(1455);
     expect(parseCallbackUrl(`${expected}?code=c&state=s&client_id=oaiapp_1`, expected)).toEqual({ code: "c", state: "s", clientId: "oaiapp_1", error: null });
+    expect(parseCallbackUrl(`  "${expected}?code=c&amp;scope=a+b&amp;state=s&amp;client_id=oaiapp_1"  `, expected)).toEqual({ code: "c", state: "s", clientId: "oaiapp_1", error: null });
     expect(() => parseCallbackUrl("https://evil.com/auth/callback?code=c", expected)).toThrow();
     expect(() => parseCallbackUrl("http://localhost:1455/auth/callback?code=c", expected)).toThrow();
     expect(() => parseCallbackUrl("http://127.0.0.1:1455/callback?code=c", expected)).toThrow();
