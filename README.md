@@ -42,17 +42,46 @@ Quick scans use repository metadata only. Opening a repository (or running `pnpm
 
 **1. API token (recommended).** Unauthenticated requests are limited to 60 per hour, enough for a couple of full analyses. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with **no extra permissions** (public repositories only) and set `GITHUB_TOKEN`. That lifts the limit to 5,000 requests per hour. The token is read only on the server (`src/lib/env.ts`, `src/services/github.ts`) and is never sent to the browser.
 
-**2. GitHub OAuth App (for sign-in).**
+**2. GitHub OAuth App (for sign-in).** This is what makes the **Sign in** button work (collections, "I Want to Revive This", profiles). It takes about two minutes:
 
-1. Open <https://github.com/settings/developers> and choose **New OAuth App**.
-2. **Application name**: GitHub Graveyard (anything you like). **Homepage URL**: your `APP_URL`, e.g. `http://localhost:3000`.
-3. **Authorization callback URL**: `<APP_URL>/api/auth/callback/github`, e.g. `http://localhost:3000/api/auth/callback/github`.
-4. Register the app, copy the **Client ID**, generate a **Client secret**, and put them in `.env` as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
-5. Set `APP_URL` to the exact public origin you registered. Restart the server.
+1. Decide the public address of your app, exactly as people will type it. Locally that is `http://localhost:3000`; on a server it is something like `https://graveyard.example.com`. Call it `APP_URL`.
+2. Go to <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App** and fill in:
 
-Only the `read:user` scope is requested (public profile). The OAuth access token is used once to read your profile and is **not stored**. Sessions are random 256-bit tokens in an `HttpOnly`, `SameSite=Lax` cookie; only a SHA-256 hash is stored in the database.
+   | Field | Value |
+   | --- | --- |
+   | Application name | GitHub Graveyard (anything) |
+   | Homepage URL | your `APP_URL` |
+   | Application description | optional |
+   | **Authorization callback URL** | `APP_URL` + `/api/auth/callback/github`, for example `http://localhost:3000/api/auth/callback/github` |
+   | Enable Device Flow | leave unchecked |
 
-Without OAuth credentials the app works fully in read-only mode and the sign-in page explains what to configure.
+3. Click **Register application**. On the next page copy the **Client ID**, then click **Generate a new client secret** and copy it right away (GitHub shows it once).
+4. Put the three values in `.env` and restart the server:
+
+   ```bash
+   APP_URL="http://localhost:3000"
+   GITHUB_CLIENT_ID="Iv1.0123456789abcdef"
+   GITHUB_CLIENT_SECRET="0123456789abcdef0123456789abcdef01234567"
+   ```
+
+5. Open `APP_URL`, click **Sign in**, then **Continue with GitHub**. GitHub asks you to authorize the app once and sends you back, signed in.
+
+Only the `read:user` scope is requested (public profile). The OAuth access token is used once to read your profile and is **not stored**. Sessions are random 256-bit tokens in an `HttpOnly`, `SameSite=Lax` cookie; only a SHA-256 hash is stored in the database. Without OAuth credentials the app works fully in read-only mode and `/login` tells you what is missing.
+
+**If sign-in fails**
+
+| Symptom | Cause and fix |
+| --- | --- |
+| GitHub shows "The redirect_uri is not associated with this application" | The callback URL in the OAuth App doesn't exactly match `APP_URL` + `/api/auth/callback/github` (scheme, host, port and path). Edit the OAuth App or `APP_URL`. |
+| Back on `/login?error=invalid_state` | The sign-in cookie was lost: you started on one host and returned on another (`localhost` vs `127.0.0.1`, or `http` vs `https`). Always use the exact `APP_URL` host. |
+| `/login?error=not_configured` | `GITHUB_CLIENT_ID` or `GITHUB_CLIENT_SECRET` is empty, or the server wasn't restarted after editing `.env`. |
+| `/login?error=login_failed` | Wrong client secret, or the code expired. Generate a new secret and try again. |
+| Signed in but redirected to `localhost` | `APP_URL` still points at localhost while you serve the app from another address. Set it to the public URL. |
+| Behind a reverse proxy, buttons say "Cross-origin requests are not allowed" | Forward the original `Host` (or set `X-Forwarded-Host`) and set `APP_URL` to the public origin. |
+
+Use one OAuth App per environment (local, staging, production): GitHub allows only one callback URL per app.
+
+**3. ChatGPT sign-in for AI (optional, separate from the login above).** "Continue with ChatGPT" on `/settings/ai` does not log you into the site; it lets you use your own ChatGPT plan for AI insights. Set `ENCRYPTION_KEY` (`openssl rand -base64 32`) and `CHATGPT_PLAN_ENABLED=true`, restart, and see [Your AI](#your-ai-chatgpt-plan-or-your-own-key).
 
 ### Environment variables
 
