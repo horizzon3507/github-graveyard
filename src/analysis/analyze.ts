@@ -10,7 +10,7 @@ import { countMaintenanceRequests, findIssuesWorthSolving } from "@/analysis/iss
 import { assessDifficulty, calculateCommunityScore, calculateHiddenGemScore } from "@/analysis/rankings";
 import { buildAbandonmentSignals, buildChallenges, buildCommunitySignals, buildRoadmap, buildSuggestions } from "@/analysis/insights";
 
-export const ALGORITHM_VERSION = 1;
+export const ALGORITHM_VERSION = 2;
 
 export interface ForkAssessment {
   fullName: string;
@@ -135,7 +135,12 @@ export function analyzeRepository(input: AnalysisInput): AnalysisResult {
         at: data.workflowRun.createdAt,
         note: "Last GitHub Actions run on the repository. The Graveyard never compiles code: treat this as a hint, not proof.",
       }
-    : { source: "none", conclusion: null, at: null, note: data ? "No GitHub Actions runs found. The Graveyard cannot tell whether the project still builds." : "Run the full analysis for build hints." };
+    : {
+        source: "none",
+        conclusion: null,
+        at: null,
+        note: !data ? "Run the full analysis for build hints." : data.failed?.includes("workflow runs") ? "CI runs could not be checked (GitHub request failed)." : "No GitHub Actions runs found. The Graveyard cannot tell whether the project still builds.",
+      };
 
   return {
     algorithmVersion: ALGORITHM_VERSION,

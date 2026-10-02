@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: graveyard
+      POSTGRES_PASSWORD: graveyard
+      POSTGRES_DB: graveyard
+    ports:
+      - "5432:5432"
+    volumes:
+      - graveyard-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graveyard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  graveyard-data:

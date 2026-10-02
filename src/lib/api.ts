@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AppError, GitHubRateLimitError, isAppError } from "@/lib/errors";
+import { AppError, hasCode, isAppError, rateLimitReset } from "@/lib/errors";
 
 export function json<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -11,9 +11,8 @@ export function errorResponse(error: unknown) {
     if (error.code === "too_many_requests" && typeof error.details?.retryAfterSeconds === "number") {
       headers["Retry-After"] = String(error.details.retryAfterSeconds);
     }
-    if (error instanceof GitHubRateLimitError && error.resetAt) {
-      headers["Retry-After"] = String(Math.max(1, Math.ceil((error.resetAt.getTime() - Date.now()) / 1000)));
-    }
+    const resetAt = hasCode(error, "rate_limited") ? rateLimitReset(error) : null;
+    if (resetAt) headers["Retry-After"] = String(Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000)));
     return NextResponse.json({ error: { code: error.code, message: error.message, ...error.details } }, { status: error.status, headers });
   }
   console.error("[api] unexpected error", error);

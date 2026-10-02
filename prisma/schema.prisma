@@ -135,6 +135,9 @@ model Repository {
   @@index([owner])
   @@index([topics], type: Gin)
   @@index([categories], type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_name_trgm_idx")
+  @@index([owner(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_owner_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_description_trgm_idx")
 }
 
 model RepositorySnapshot {
@@ -206,6 +209,7 @@ model RepositoryFork {
   name          String
   htmlUrl       String
   description   String?
+  defaultBranch String    @default("main")
   stars         Int       @default(0)
   pushedAt      DateTime
   aheadBy       Int?

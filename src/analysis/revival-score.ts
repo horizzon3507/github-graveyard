@@ -44,6 +44,9 @@ export const REVIVAL_WEIGHTS = {
   community: 8,
 } as const;
 
+/** Below this confidence the score is pulled toward 50 in proportion to the missing data. */
+export const QUICK_SCAN_CONFIDENCE = 60;
+
 export function calculateRevivalScore(input: RevivalInput): ScoreResult {
   const w = REVIVAL_WEIGHTS;
   const d = input.deep;
@@ -136,5 +139,8 @@ export function calculateRevivalScore(input: RevivalInput): ScoreResult {
     detail: d ? `${d.contributors ?? "unknown number of"} contributors and ${d.activeForks} active fork${d.activeForks === 1 ? "" : "s"}.` : "Not measured in a quick scan.",
   });
 
-  return combine(f);
+  const result = combine(f);
+  if (result.confidence >= QUICK_SCAN_CONFIDENCE) return result;
+  const shrunk = Math.round(50 + ((result.score - 50) * result.confidence) / QUICK_SCAN_CONFIDENCE);
+  return { ...result, score: shrunk };
 }

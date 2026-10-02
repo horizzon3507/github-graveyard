@@ -41,7 +41,8 @@ function mapRepo(r: any): RepoMetadata {
     disabled: Boolean(r.disabled),
     isPrivate: Boolean(r.private),
     isFork: Boolean(r.fork),
-    parent: r.parent?.full_name ?? r.source?.full_name ?? null,
+    parent: r.parent?.full_name ?? null,
+    root: r.source?.full_name ?? null,
     defaultBranch: r.default_branch ?? "main",
     ownerType: r.owner.type ?? "User",
     createdAt: r.created_at,
@@ -224,6 +225,11 @@ export class RestGitHubProvider implements GitHubProvider {
   async getUserLastActivity(login: string) {
     const res = await this.client.request<any[]>(`/users/${encodeURIComponent(login)}/events/public?per_page=1`, { ttl: 12 * HOUR });
     return res.data?.[0]?.created_at ?? null;
+  }
+
+  async isPublicOrgMember(org: string, login: string) {
+    const res = await this.client.request<unknown>(`/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(login)}`, { ttl: HOUR });
+    return res.status === 200 || res.status === 204;
   }
 
   async searchRepositories(query: string, opts: { sort?: "stars" | "updated" | "forks"; page?: number; perPage?: number }): Promise<SearchResultPage> {

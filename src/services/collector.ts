@@ -1,5 +1,5 @@
 import type { GitHubProvider, RepoMetadata, ForkInfo } from "@/types/github";
-import type { DependencyHealth, SnapshotData } from "@/types/analysis";
+import { PARTIAL_PREFIX, type DependencyHealth, type SnapshotData } from "@/types/analysis";
 import type { RegistryProvider } from "@/providers/registry/registry-provider";
 import type { AIProvider } from "@/providers/ai/types";
 import type { ForkAssessment } from "@/analysis/analyze";
@@ -7,7 +7,7 @@ import { MANIFEST_FILES, parsePackageJson } from "@/analysis/technology";
 import { EMPTY_DEPENDENCY_HEALTH, assessDependencies, extractDependencies, type LatestVersion } from "@/analysis/dependencies";
 import { bucketByMonth } from "@/analysis/activity";
 import { summarizeProject } from "@/analysis/summary";
-import { GitHubRateLimitError, isAppError } from "@/lib/errors";
+import { hasCode, isAppError } from "@/lib/errors";
 
 export interface CollectOptions {
   forkDepth: number;
@@ -41,13 +41,15 @@ export async function collectRepositoryData(
   const now = options.now ?? new Date();
   const { owner, name } = repo;
   const notes: string[] = [];
+  const failed: string[] = [];
   let rateLimited = false;
 
   const safe = async <T>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
     try {
       return await fn();
     } catch (error) {
-      if (error instanceof GitHubRateLimitError) rateLimited = true;
+      if (hasCode(error, "rate_limited")) rateLimited = true;
+      failed.push(label.startsWith("fork ") ? "forks" : label);
       notes.push(`${label}: ${isAppError(error) ? error.message : "request failed"}`);
       return undefined;
     }
@@ -97,7 +99,9 @@ export async function collectRepositoryData(
   const downloads = pkg?.name && !(pkg as { private?: boolean }).private ? await registry.npmDownloadsLastMonth(pkg.name) : null;
 
   const topContributor = commitActivity?.contributors.find((c) => c.login !== "unknown")?.login ?? null;
-  const maintainerLastActiveAt = topContributor ? ((await safe("maintainer activity", () => github.getUserLastActivity(topContributor))) ?? null) : null;
+  const maintainerResult = topContributor ? await safe("maintainer activity", () => github.getUserLastActivity(topContributor)) : undefined;
+  const maintainerKnown = maintainerResult !== undefined;
+  const maintainerLastActiveAt = maintainerResult ?? null;
 
   const hasWorkflows = paths.some((p) => p.startsWith(".github/workflows/"));
   const run = hasWorkflows ? await safe("workflow runs", () => github.getLatestWorkflowRun(owner, name)) : undefined;
@@ -131,11 +135,13 @@ export async function collectRepositoryData(
     totalCommits: commit?.totalCommits ?? null,
     totalContributors: contributorCount ?? null,
     maintainerLastActiveAt,
-    topContributor,
+    topContributor: maintainerKnown ? topContributor : null,
     downloadsLastMonth: downloads,
     workflowRun: run ? { conclusion: run.conclusion, createdAt: run.createdAt, name: run.name } : null,
     notes,
+    failed: [...new Set(failed)],
   };
+  if (data.failed.length > 0) notes.unshift(`${PARTIAL_PREFIX} could not fetch ${data.failed.join(", ")}. Those sections may understate reality; the analysis will retry within the hour.`);
 
   return {
     data,

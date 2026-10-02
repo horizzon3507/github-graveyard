@@ -24,6 +24,8 @@ const STATUS: Record<AppErrorCode, number> = {
 };
 
 export class AppError extends Error {
+  /** Brand used by isAppError so checks survive duplicated module instances in bundlers. */
+  readonly isAppError = true;
   readonly code: AppErrorCode;
   readonly status: number;
   readonly details?: Record<string, unknown>;
@@ -69,5 +71,15 @@ export class GitHubUnavailableError extends AppError {
 }
 
 export function isAppError(error: unknown): error is AppError {
-  return error instanceof AppError;
+  return typeof error === "object" && error !== null && (error as { isAppError?: unknown }).isAppError === true;
+}
+
+export function hasCode(error: unknown, code: AppErrorCode): error is AppError {
+  return isAppError(error) && error.code === code;
+}
+
+/** Reset time carried by a rate-limit error, if GitHub reported one. */
+export function rateLimitReset(error: unknown): Date | null {
+  const value = isAppError(error) ? error.details?.resetAt : null;
+  return typeof value === "string" ? new Date(value) : null;
 }

@@ -160,6 +160,11 @@ export class GitHubClient {
       return { status: response.status, data: null, link: null, fromCache: false, stale: false };
     }
 
+    if (response.status === 204) {
+      await this.store.set(key, { etag: null, status: 200, body: { data: null, link: null } satisfies Stored, fetchedAt: new Date(nowMs), expiresAt: new Date(nowMs + ttlMs) });
+      return { status: 204, data: null, link: null, fromCache: false, stale: false };
+    }
+
     if (!response.ok) throw new GitHubUnavailableError(`GitHub responded with ${response.status}.`);
 
     const data = (await response.json()) as unknown;

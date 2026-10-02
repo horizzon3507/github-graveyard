@@ -7,7 +7,7 @@ import { categorize } from "@/analysis/categories";
 import { analyzeRepository, ALGORITHM_VERSION } from "@/analysis/analyze";
 import { toSlug } from "@/lib/validation";
 import { getGitHub } from "@/services/github";
-import { GitHubNotFoundError } from "@/lib/errors";
+import { hasCode } from "@/lib/errors";
 
 export const j = (value: unknown) => value as Prisma.InputJsonValue;
 
@@ -96,7 +96,7 @@ export async function upsertRepository(meta: RepoMetadata, source: RepositorySou
   return created;
 }
 
-async function writeQuickAnalysis(repository: Repository, meta: RepoMetadata, now: Date) {
+export async function writeQuickAnalysis(repository: Repository, meta: RepoMetadata, now: Date) {
   const result = analyzeRepository({
     now,
     repo: meta,
@@ -140,8 +140,50 @@ export async function ensureRepository(owner: string, name: string, source: Repo
     const meta = await getGitHub().github.getRepository(owner, name);
     return await upsertRepository(meta, source);
   } catch (error) {
-    if (existing && !(error instanceof GitHubNotFoundError)) return existing;
-    if (existing && error instanceof GitHubNotFoundError) await db.repository.delete({ where: { id: existing.id } }).catch(() => undefined);
+    if (existing && !hasCode(error, "not_found")) return existing;
+    if (existing && hasCode(error, "not_found")) await db.repository.delete({ where: { id: existing.id } }).catch(() => undefined);
     throw error;
+  }
+}
+
+/** Rebuilds quick scans whose algorithm version is behind, using stored metadata only (no GitHub calls). */
+export async function recomputeQuickAnalyses(now = new Date()): Promise<number> {
+  let done = 0;
+  for (;;) {
+    const rows = await db.repository.findMany({
+      where: { analysisDepth: "QUICK", analysis: { is: { algorithmVersion: { lt: ALGORITHM_VERSION } } } },
+      take: 200,
+    });
+    if (rows.length === 0) return done;
+    for (const r of rows) {
+      const meta: RepoMetadata = {
+        githubId: Number(r.githubId),
+        owner: r.owner,
+        name: r.name,
+        description: r.description,
+        htmlUrl: r.htmlUrl,
+        homepage: r.homepage,
+        language: r.language,
+        topics: r.topics,
+        license: r.licenseName ? { spdx: r.license === "OTHER" ? null : r.license, name: r.licenseName } : null,
+        stars: r.stars,
+        forks: r.forks,
+        watchers: r.watchers,
+        openIssues: r.openIssues,
+        sizeKb: r.sizeKb,
+        archived: r.archived,
+        disabled: false,
+        isPrivate: false,
+        isFork: r.isFork,
+        parent: r.parentSlug,
+        root: null,
+        defaultBranch: r.defaultBranch,
+        ownerType: r.ownerType,
+        createdAt: r.ghCreatedAt.toISOString(),
+        pushedAt: r.pushedAt.toISOString(),
+      };
+      await writeQuickAnalysis(r, meta, now);
+      done++;
+    }
   }
 }

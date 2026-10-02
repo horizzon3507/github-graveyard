@@ -18,6 +18,8 @@ export interface RepoMetadata {
   isPrivate: boolean;
   isFork: boolean;
   parent: string | null;
+  /** Root repository of the fork network (the original project). */
+  root: string | null;
   defaultBranch: string;
   ownerType: string;
   createdAt: string;
@@ -135,5 +137,6 @@ export interface GitHubProvider {
   getFile(owner: string, name: string, branch: string, path: string): Promise<string | null>;
   getLatestWorkflowRun(owner: string, name: string): Promise<WorkflowRun | null>;
   getUserLastActivity(login: string): Promise<string | null>;
+  isPublicOrgMember(org: string, login: string): Promise<boolean>;
   searchRepositories(query: string, opts: { sort?: "stars" | "updated" | "forks"; page?: number; perPage?: number }): Promise<SearchResultPage>;
 }

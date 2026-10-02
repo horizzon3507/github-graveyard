@@ -2,8 +2,9 @@ import "server-only";
 import type { Repository, RepositoryAnalysis } from "@/generated/prisma/client";
 import { db } from "@/database/client";
 import { env } from "@/lib/env";
-import { GitHubRateLimitError, GitHubNotFoundError, isAppError } from "@/lib/errors";
+import { GitHubRateLimitError, hasCode, isAppError, rateLimitReset } from "@/lib/errors";
 import { analyzeRepository, ALGORITHM_VERSION } from "@/analysis/analyze";
+import { PARTIAL_PREFIX } from "@/types/analysis";
 import { collectRepositoryData } from "@/services/collector";
 import { getGitHub } from "@/services/github";
 import { getAIProvider } from "@/providers/ai";
@@ -15,12 +16,13 @@ const running = new Set<string>();
 
 export type AnalysisRequestOutcome = "started" | "running" | "fresh" | "deferred" | "backoff";
 
-export function needsDeepAnalysis(analysis: Pick<RepositoryAnalysis, "depth" | "algorithmVersion" | "lastAnalyzedAt" | "status" | "startedAt" | "updatedAt"> | null, now = new Date()): boolean {
+export function needsDeepAnalysis(analysis: Pick<RepositoryAnalysis, "depth" | "algorithmVersion" | "lastAnalyzedAt" | "status" | "startedAt" | "updatedAt" | "notes"> | null, now = new Date()): boolean {
   if (!analysis) return true;
   if (analysis.status === "RUNNING" && analysis.startedAt && now.getTime() - analysis.startedAt.getTime() < STALE_RUN_MS) return false;
   if (analysis.status === "FAILED" && now.getTime() - analysis.updatedAt.getTime() < FAILURE_RETRY_MS) return false;
   if (analysis.depth === "QUICK" || analysis.algorithmVersion < ALGORITHM_VERSION) return true;
-  const staleMs = env().ANALYSIS_STALE_DAYS * 86_400_000;
+  const partial = Array.isArray(analysis.notes) && typeof analysis.notes[0] === "string" && analysis.notes[0].startsWith(PARTIAL_PREFIX);
+  const staleMs = partial ? 3600_000 : env().ANALYSIS_STALE_DAYS * 86_400_000;
   return !analysis.lastAnalyzedAt || now.getTime() - analysis.lastAnalyzedAt.getTime() > staleMs;
 }
 
@@ -127,6 +129,7 @@ export async function runDeepAnalysis(repositoryId: string): Promise<void> {
             name: f.name,
             htmlUrl: f.htmlUrl,
             description: f.description,
+            defaultBranch: f.defaultBranch,
             stars: f.stars,
             pushedAt: new Date(f.pushedAt),
             aheadBy: f.aheadBy,
@@ -161,8 +164,8 @@ export async function runDeepAnalysis(repositoryId: string): Promise<void> {
       });
     });
   } catch (error) {
-    if (error instanceof GitHubRateLimitError) await fail(`rate_limited:${error.resetAt?.toISOString() ?? ""}`);
-    else if (error instanceof GitHubNotFoundError) await fail("not_found:Repository is no longer available on GitHub.");
+    if (hasCode(error, "rate_limited")) await fail(`rate_limited:${rateLimitReset(error)?.toISOString() ?? ""}`);
+    else if (hasCode(error, "not_found")) await fail("not_found:Repository is no longer available on GitHub.");
     else await fail(`failed:${isAppError(error) ? error.message : "Unexpected error while analyzing."}`);
     if (!isAppError(error)) console.error("[analysis] unexpected", error);
   }

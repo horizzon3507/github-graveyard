@@ -128,7 +128,11 @@ export interface SnapshotData {
   downloadsLastMonth: number | null;
   workflowRun: { conclusion: string | null; createdAt: string; name: string } | null;
   notes: string[];
+  /** Labels of the GitHub requests that failed (rate limit, outage). Their sections may understate reality. */
+  failed: string[];
 }
+
+export const PARTIAL_PREFIX = "Partial analysis:";
 
 export interface AnalysisResult {
   algorithmVersion: number;

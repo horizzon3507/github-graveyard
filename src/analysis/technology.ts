@@ -159,7 +159,7 @@ function nodeEngine(files: Record<string, string>, pkg: PackageJson | null): { v
 
 function pythonRules(files: Record<string, string>, add: Add) {
   const setup = `${files["setup.py"] ?? ""}\n${files["setup.cfg"] ?? ""}\n${files["pyproject.toml"] ?? ""}\n${files["tox.ini"] ?? ""}`;
-  const py2 = /Programming Language :: Python :: 2(?!\.\d*[^7])|python_requires\s*=\s*['"]?[<>=~!,\s]*2\.|envlist\s*=.*\bpy2/i.test(setup);
+  const py2 = /Programming Language :: Python :: 2\b|python_requires\s*=\s*['"]?[<>=~!,\s]*2\.|envlist\s*=.*\bpy2/i.test(setup);
   const pyVersionFile = files[".python-version"] ?? files["runtime.txt"] ?? "";
   const pyFileMajor = majorOf(pyVersionFile.replace(/python-?/i, ""));
   if (py2 || pyFileMajor === 2) {
