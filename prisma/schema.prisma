@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+enum AnalysisDepth {
+  QUICK
+  DEEP
+}
+
+enum Difficulty {
+  EASY
+  MODERATE
+  HARD
+  EXTREME
+}
+
+enum Effort {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum RepositorySource {
+  INGEST
+  SEARCH
+  ANALYZE
+  FORK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  githubId     BigInt   @unique
+  login        String
+  loginLower   String   @unique
+  name         String?
+  avatarUrl    String?
+  htmlUrl      String
+  bio          String?
+  favoriteTech String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions      Session[]
+  collections   Collection[]
+  interests     RevivalInterest[]
+  resurrections ResurrectionProject[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Repository {
+  id              String           @id @default(cuid())
+  githubId        BigInt           @unique
+  owner           String
+  name            String
+  slug            String           @unique
+  description     String?
+  htmlUrl         String
+  homepage        String?
+  language        String?
+  topics          String[]
+  categories      String[]
+  license         String?
+  licenseName     String?
+  stars           Int              @default(0)
+  forks           Int              @default(0)
+  watchers        Int              @default(0)
+  openIssues      Int              @default(0)
+  sizeKb          Int              @default(0)
+  archived        Boolean          @default(false)
+  isFork          Boolean          @default(false)
+  parentSlug      String?
+  defaultBranch   String           @default("main")
+  ownerType       String           @default("User")
+  ghCreatedAt     DateTime
+  pushedAt        DateTime
+  lastCommitAt    DateTime?
+  lastReleaseAt   DateTime?
+  lastActivityAt  DateTime
+  contributors    Int?
+  graveScore      Int?
+  revivalScore    Int?
+  hiddenGemScore  Int?
+  communityScore  Int?
+  difficulty      Difficulty?
+  activeForkCount Int?
+  analysisDepth   AnalysisDepth    @default(QUICK)
+  source          RepositorySource @default(SEARCH)
+  syncedAt        DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  snapshots               RepositorySnapshot[]
+  analysis                RepositoryAnalysis?
+  forkList                RepositoryFork[]
+  collectionItems         CollectionRepository[]
+  interests               RevivalInterest[]
+  resurrectionsAsOriginal ResurrectionProject[]  @relation("OriginalRepository")
+  resurrectionsAsRevival  ResurrectionProject[]  @relation("RevivalRepository")
+
+  @@index([lastActivityAt])
+  @@index([stars])
+  @@index([forks])
+  @@index([graveScore])
+  @@index([revivalScore])
+  @@index([hiddenGemScore])
+  @@index([communityScore])
+  @@index([language])
+  @@index([license])
+  @@index([archived])
+  @@index([difficulty])
+  @@index([owner])
+  @@index([topics], type: Gin)
+  @@index([categories], type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_name_trgm_idx")
+  @@index([owner(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_owner_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "Repository_description_trgm_idx")
+}
+
+model RepositorySnapshot {
+  id            String        @id @default(cuid())
+  repositoryId  String
+  capturedAt    DateTime      @default(now())
+  depth         AnalysisDepth
+  stars         Int
+  forks         Int
+  watchers      Int
+  openIssues    Int
+  contributors  Int?
+  pushedAt      DateTime
+  lastCommitAt  DateTime?
+  lastReleaseAt DateTime?
+  data          Json
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, capturedAt(sort: Desc)])
+}
+
+model RepositoryAnalysis {
+  id                       String         @id @default(cuid())
+  repositoryId             String         @unique
+  status                   AnalysisStatus @default(PENDING)
+  depth                    AnalysisDepth  @default(QUICK)
+  algorithmVersion         Int
+  graveScore               Int
+  graveConfidence          Int
+  revivalScore             Int
+  revivalConfidence        Int
+  hiddenGemScore           Int
+  communityScore           Int
+  difficulty               Difficulty?
+  effort                   Effort?
+  graveFactors             Json
+  revivalFactors           Json
+  abandonmentSignals       Json
+  communitySignals         Json
+  technologies             Json
+  challenges               Json
+  modernizationSuggestions Json
+  roadmap                  Json
+  issuesWorthSolving       Json
+  licenseAssessment        Json
+  buildSignal              Json
+  dependencyHealth         Json
+  summary                  String?
+  summarySource            String?
+  notes                    Json
+  error                    String?
+  startedAt                DateTime?
+  lastAnalyzedAt           DateTime?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([status, startedAt])
+  @@index([depth, lastAnalyzedAt])
+}
+
+model RepositoryFork {
+  id            String    @id @default(cuid())
+  repositoryId  String
+  fullName      String
+  owner         String
+  name          String
+  htmlUrl       String
+  description   String?
+  defaultBranch String    @default("main")
+  stars         Int       @default(0)
+  pushedAt      DateTime
+  aheadBy       Int?
+  behindBy      Int?
+  recentCommits Int?
+  contributors  Int?
+  lastCommitAt  DateTime?
+  isActive      Boolean   @default(false)
+  checkedAt     DateTime  @default(now())
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, fullName])
+  @@index([repositoryId, isActive, stars(sort: Desc)])
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CollectionRepository[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model CollectionRepository {
+  collectionId String
+  repositoryId String
+  note         String?
+  addedAt      DateTime @default(now())
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, repositoryId])
+  @@index([repositoryId])
+}
+
+model RevivalInterest {
+  id           String   @id @default(cuid())
+  userId       String
+  repositoryId String
+  message      String?
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, repositoryId])
+  @@index([repositoryId])
+}
+
+model ResurrectionProject {
+  id             String   @id @default(cuid())
+  originalId     String
+  revivalId      String
+  registeredById String
+  note           String?
+  createdAt      DateTime @default(now())
+
+  original     Repository @relation("OriginalRepository", fields: [originalId], references: [id], onDelete: Cascade)
+  revival      Repository @relation("RevivalRepository", fields: [revivalId], references: [id], onDelete: Cascade)
+  registeredBy User       @relation(fields: [registeredById], references: [id], onDelete: Cascade)
+
+  @@unique([originalId, revivalId])
+  @@index([revivalId])
+  @@index([registeredById])
+}
+
+model CacheEntry {
+  key       String   @id
+  etag      String?
+  status    Int
+  body      Json?
+  fetchedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
