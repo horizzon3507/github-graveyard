@@ -2,7 +2,9 @@ export interface InsightFacts {
   fullName: string;
   description: string | null;
   summary: string | null;
-  daysSinceCommit: number;
+  /** Null until a deep analysis has measured the last commit. */
+  daysSinceCommit: number | null;
+  daysSincePush: number;
   archived: boolean;
   stars: number;
   forks: number;
@@ -28,7 +30,7 @@ export function buildInsightPrompt(f: InsightFacts): string {
     `Repository: ${f.fullName}${f.archived ? " (archived)" : ""}`,
     f.description ? `Description: ${f.description}` : "",
     f.summary ? `Summary: ${f.summary}` : "",
-    `Last commit: ${f.daysSinceCommit} days ago. Stars: ${f.stars}. Forks: ${f.forks}. License: ${f.license ?? "none detected"}.`,
+    `${f.daysSinceCommit === null ? `Last commit: not measured yet. Last push: ${f.daysSincePush} days ago` : `Last commit: ${f.daysSinceCommit} days ago`}. Stars: ${f.stars}. Forks: ${f.forks}. License: ${f.license ?? "none detected"}.`,
     `Grave Score (0-100, higher is more abandoned): ${f.graveScore}. Revival Score (0-100, higher is more promising): ${f.revivalScore}. Revival difficulty: ${f.difficulty ?? "not analyzed"}.`,
     "",
     list("Why it looks abandoned", f.abandonmentSignals),

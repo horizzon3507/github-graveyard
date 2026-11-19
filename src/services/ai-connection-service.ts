@@ -15,6 +15,7 @@ import {
   pickModel,
   refreshCredentials,
   revokeRefreshToken,
+  FALLBACK_MODEL,
   REMOTE_CALLBACK_PORT,
   type CallbackParams,
   type ChatGPTCredentials,
@@ -112,7 +113,8 @@ export function startChatGPT(request: Request, existing: AiConnection | null) {
   if (existing?.kind === "CHATGPT") creds = (readStored(existing) as Extract<Stored, { kind: "CHATGPT" }>).creds;
   const pending = newPendingAuthorization(redirectUri, mode, creds?.clientId ?? null);
   const hostId = deriveHostId(env().ENCRYPTION_KEY);
-  const authorizeUrl = buildAuthorizeUrl(pending, hostId, creds ? { idToken: creds.idToken, email: creds.email } : undefined);
+  // The URL is returned to browser JavaScript, so the stored ID token is not sent as id_token_hint.
+  const authorizeUrl = buildAuthorizeUrl(pending, hostId, creds ? { email: creds.email } : undefined);
   return { authorizeUrl, mode, redirectUri, attemptCookie: encrypt(JSON.stringify(pending), env().ENCRYPTION_KEY) };
 }
 
@@ -144,7 +146,8 @@ async function chatgptAccessToken(row: AiConnection): Promise<string> {
   if (stored.kind !== "CHATGPT") throw new AppError("internal", "Not a ChatGPT connection.");
   if (stored.creds.expiresAt - Date.now() > REFRESH_MARGIN_MS) return stored.creds.accessToken;
 
-  return db.$transaction(
+  // The deletion must commit, so the expired case is returned from the transaction and thrown after it.
+  const token = await db.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${row.id}))`;
       const fresh = await tx.aiConnection.findUnique({ where: { id: row.id } });
@@ -157,7 +160,7 @@ async function chatgptAccessToken(row: AiConnection): Promise<string> {
       } catch (error) {
         if (error instanceof AppError && error.details?.oauth === "invalid_grant") {
           await tx.aiConnection.delete({ where: { id: row.id } });
-          throw new AppError("unauthorized", "Your ChatGPT session expired. Connect ChatGPT again.");
+          return null;
         }
         throw error;
       }
@@ -166,11 +169,16 @@ async function chatgptAccessToken(row: AiConnection): Promise<string> {
     },
     { timeout: 30_000 },
   );
+  if (token === null) throw new AppError("unauthorized", "Your ChatGPT session expired. Connect ChatGPT again.");
+  return token;
 }
 
 export function providerFor(row: AiConnection): AIProvider {
   requireEncryption();
-  if (row.kind === "CHATGPT") return new ChatGPTPlanProvider(() => chatgptAccessToken(row), row.model ?? "gpt-6.1-sol");
+  if (row.kind === "CHATGPT") {
+    if (!isChatGPTPlanEnabled()) throw new AppError("forbidden", "ChatGPT plan usage is disabled on this instance. Connect an API key instead.");
+    return new ChatGPTPlanProvider(() => chatgptAccessToken(row), row.model ?? FALLBACK_MODEL);
+  }
   const stored = readStored(row);
   if (stored.kind !== "API_KEY") throw new AppError("internal", "Unexpected connection type.");
   return createByokProvider(row.provider, stored.apiKey, row.model ?? undefined);

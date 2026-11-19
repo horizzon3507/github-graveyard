@@ -112,6 +112,9 @@ interface TokenResponse {
   scope?: string;
 }
 
+/** Token-endpoint errors that mean the code or refresh token can never work again. */
+const UNUSABLE_GRANT = new Set(["invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"]);
+
 async function tokenRequest(body: URLSearchParams): Promise<TokenResponse> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -123,7 +126,7 @@ async function tokenRequest(body: URLSearchParams): Promise<TokenResponse> {
   const json = (await res.json().catch(() => ({}))) as TokenResponse & { error?: string; error_description?: string };
   if (!res.ok || !json.access_token) {
     const code = json.error ?? `http_${res.status}`;
-    if (code === "invalid_grant") throw new AppError("unauthorized", "The ChatGPT authorization expired or was already used. Connect again.", { oauth: code });
+    if (UNUSABLE_GRANT.has(code)) throw new AppError("unauthorized", "The ChatGPT authorization expired or was already used. Connect again.", { oauth: "invalid_grant" });
     throw new AppError("unauthorized", `ChatGPT sign-in failed (${code}).`, { oauth: code });
   }
   return json;
@@ -207,12 +210,28 @@ export async function revokeRefreshToken(creds: ChatGPTCredentials): Promise<voi
   }
 }
 
+type ListedModel = { slug?: string; id?: string; visibility?: string };
+
+/**
+ * Picks the first model the account can use. The plan flow documents `{ models: [{ slug, visibility }] }`;
+ * the standard OpenAI list shape `{ data: [{ id }] }` is accepted too.
+ */
+export function chooseModel(json: unknown): string | null {
+  const body = (json ?? {}) as { models?: ListedModel[]; data?: ListedModel[] };
+  const listed = Array.isArray(body.models) ? body.models : Array.isArray(body.data) ? body.data : [];
+  const name = (m: ListedModel) => m.slug ?? m.id;
+  const shown = listed.filter((m) => name(m) && (m.visibility === undefined || m.visibility === "list"));
+  // Only chat models work with the Responses API text flow used here.
+  const usable = shown.filter((m) => !/embedding|whisper|tts|dall-e|image|moderation|audio|realtime|transcribe/i.test(name(m)!));
+  return (usable[0] && name(usable[0])) ?? null;
+}
+
+/** The fallback is used only when discovery fails or lists nothing usable. */
 export async function pickModel(accessToken: string): Promise<string> {
   try {
     const res = await fetch(`${RESOURCE}/models`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000), cache: "no-store" });
     if (!res.ok) return FALLBACK_MODEL;
-    const json = (await res.json()) as { models?: { slug: string; visibility?: string }[] };
-    return json.models?.find((m) => m.visibility === "list")?.slug ?? FALLBACK_MODEL;
+    return chooseModel(await res.json()) ?? FALLBACK_MODEL;
   } catch {
     return FALLBACK_MODEL;
   }
@@ -227,9 +246,11 @@ export async function readResponsesStream(body: ReadableStream<Uint8Array>): Pro
   let completed = false;
 
   const handle = (raw: string) => {
-    const line = raw.split("\n").find((l) => l.startsWith("data:"));
-    if (!line) return;
-    const payload = line.slice(5).trim();
+    const payload = raw
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice(5).trim())
+      .join("\n");
     if (!payload || payload === "[DONE]") return;
     let event: { type?: string; delta?: string; response?: { error?: { code?: string; message?: string }; incomplete_details?: { reason?: string } } };
     try {
@@ -253,6 +274,9 @@ export async function readResponsesStream(body: ReadableStream<Uint8Array>): Pro
   for (;;) {
     const { done, value } = await reader.read();
     if (value) buffer += decoder.decode(value, { stream: true });
+    // SSE allows CRLF, LF or CR line endings. A trailing CR may be half of a CRLF split across chunks.
+    const heldCr = !done && buffer.endsWith("\r");
+    buffer = (heldCr ? buffer.slice(0, -1) : buffer).replace(/\r\n?/g, "\n") + (heldCr ? "\r" : "");
     let index: number;
     while ((index = buffer.indexOf("\n\n")) >= 0) {
       handle(buffer.slice(0, index));

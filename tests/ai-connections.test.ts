@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decrypt, deriveHostId, encrypt, sha256 } from "@/lib/crypto";
-import { buildAuthorizeUrl, exchangeCode, newPendingAuthorization, parseCallbackUrl, readResponsesStream, localRedirectUri } from "@/providers/ai/chatgpt";
+import { buildAuthorizeUrl, chooseModel, exchangeCode, newPendingAuthorization, parseCallbackUrl, readResponsesStream, localRedirectUri } from "@/providers/ai/chatgpt";
 import { BYOK_PRESETS, createByokProvider, isByokProvider } from "@/providers/ai/byok";
 import { buildInsightPrompt } from "@/analysis/insight-prompt";
 
@@ -50,6 +50,7 @@ describe("ChatGPT sign-in", () => {
     expect(p.get("client_id")).toBe("oaiapp_abc");
     expect(p.has("agent_name_hint")).toBe(false);
     expect(p.get("id_token_hint")).toBe("tok");
+    expect(new URL(buildAuthorizeUrl(pending, hostId, { email: "a@b.com" })).searchParams.has("id_token_hint")).toBe(false);
     expect(p.get("login_hint")).toBe("a@b.com");
   });
 
@@ -105,6 +106,34 @@ describe("Responses stream", () => {
   });
 });
 
+describe("ChatGPT model discovery", () => {
+  it("reads both documented and standard list shapes", () => {
+    expect(chooseModel({ models: [{ slug: "hidden", visibility: "hide" }, { slug: "gpt-a", visibility: "list" }] })).toBe("gpt-a");
+    expect(chooseModel({ data: [{ id: "text-embedding-3-small" }, { id: "gpt-b" }] })).toBe("gpt-b");
+    expect(chooseModel({})).toBeNull();
+    expect(chooseModel(null)).toBeNull();
+  });
+});
+
+describe("Responses stream line endings", () => {
+  const chunks = (parts: string[]) =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+        controller.close();
+      },
+    });
+  const crlf = 'data: {"type":"response.output_text.delta","delta":"Hi"}\r\n\r\ndata: {"type":"response.completed"}\r\n\r\n';
+
+  it("reads CRLF-framed events, including a CRLF split across chunks", async () => {
+    expect(await readResponsesStream(chunks([crlf]))).toBe("Hi");
+    const cut = crlf.indexOf("\r\n\r\n") + 1;
+    expect(await readResponsesStream(chunks([crlf.slice(0, cut), crlf.slice(cut)]))).toBe("Hi");
+    expect(await readResponsesStream(chunks([...crlf]))).toBe("Hi");
+    expect(await readResponsesStream(chunks([crlf.replace(/\r\n/g, "\r")]))).toBe("Hi");
+  });
+});
+
 describe("BYOK and prompts", () => {
   it("only allows presets with fixed endpoints", () => {
     expect(BYOK_PRESETS.map((p) => p.id)).toEqual(["openai", "anthropic", "gemini", "groq", "openrouter"]);
@@ -117,7 +146,7 @@ describe("BYOK and prompts", () => {
 
   it("builds an insight prompt only from provided facts", () => {
     const prompt = buildInsightPrompt({
-      fullName: "o/r", description: "d", summary: null, daysSinceCommit: 900, archived: true, stars: 10, forks: 2, license: "MIT",
+      fullName: "o/r", description: "d", summary: null, daysSinceCommit: 900, daysSincePush: 900, archived: true, stars: 10, forks: 2, license: "MIT",
       graveScore: 80, revivalScore: 60, difficulty: "EASY", abandonmentSignals: ["No commits for 2.5 years"], communitySignals: [], technologies: ["jQuery -> native DOM"],
       challenges: [], activeForks: [], topIssues: ["#1 Crash"], readmeExcerpt: null,
     });
@@ -126,5 +155,14 @@ describe("BYOK and prompts", () => {
     expect(prompt).toContain("#1 Crash");
     expect(prompt).not.toContain("Community signals");
     expect(prompt).toContain("at most 180 words");
+  });
+
+  it("does not present a push date as the last commit for quick scans", () => {
+    const facts = {
+      fullName: "o/r", description: null, summary: null, daysSinceCommit: null, daysSincePush: 200, archived: false, stars: 1, forks: 0, license: null,
+      graveScore: 50, revivalScore: 50, difficulty: null, abandonmentSignals: [], communitySignals: [], technologies: [], challenges: [], activeForks: [], topIssues: [], readmeExcerpt: null,
+    };
+    expect(buildInsightPrompt(facts)).toContain("Last commit: not measured yet. Last push: 200 days ago.");
+    expect(buildInsightPrompt({ ...facts, daysSinceCommit: 210 })).toContain("Last commit: 210 days ago.");
   });
 });
