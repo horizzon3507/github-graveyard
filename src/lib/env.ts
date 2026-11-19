@@ -12,6 +12,8 @@ const schema = z.object({
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().optional(),
   AI_BASE_URL: z.string().url().optional(),
+  ENCRYPTION_KEY: z.string().min(16).optional(),
+  CHATGPT_PLAN_ENABLED: z.enum(["true", "false"]).default("false"),
   ANALYSIS_FORK_DEPTH: z.coerce.number().int().min(0).max(15).default(5),
   ANALYSIS_STALE_DAYS: z.coerce.number().int().min(1).default(14),
   ANALYSIS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
@@ -35,3 +37,6 @@ export function env(): Env {
 
 export const isGitHubOAuthConfigured = () => Boolean(env().GITHUB_CLIENT_ID && env().GITHUB_CLIENT_SECRET);
 export const isGitHubTokenConfigured = () => Boolean(env().GITHUB_TOKEN);
+
+export const isEncryptionConfigured = () => Boolean(env().ENCRYPTION_KEY);
+export const isChatGPTPlanEnabled = () => env().CHATGPT_PLAN_ENABLED === "true" && isEncryptionConfigured();

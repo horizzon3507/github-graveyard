@@ -31,18 +31,31 @@ export function route<C = unknown>(handler: Handler<C>): Handler<C> {
   };
 }
 
-/** Rejects cross-site state-changing requests (CSRF defence in depth on top of SameSite=Lax). */
+/**
+ * Rejects cross-site state-changing requests (CSRF defence in depth on top of SameSite=Lax).
+ * The Origin must match the Host the request arrived on, the forwarded host set by a reverse
+ * proxy, or the configured APP_URL.
+ */
 export function assertSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return;
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   let originHost: string;
   try {
     originHost = new URL(origin).host;
   } catch {
     throw new AppError("forbidden", "Invalid origin.");
   }
-  if (originHost !== host) throw new AppError("forbidden", "Cross-origin requests are not allowed.");
+  const allowed = new Set<string>();
+  for (const name of ["host", "x-forwarded-host"]) {
+    const value = request.headers.get(name);
+    if (value) allowed.add(value.split(",")[0].trim().toLowerCase());
+  }
+  try {
+    allowed.add(new URL(process.env.APP_URL ?? "").host.toLowerCase());
+  } catch {
+    // APP_URL not set or invalid
+  }
+  if (!allowed.has(originHost.toLowerCase())) throw new AppError("forbidden", "Cross-origin requests are not allowed.");
 }
 
 export async function readJson(request: Request): Promise<unknown> {
