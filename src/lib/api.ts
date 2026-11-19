@@ -31,18 +31,37 @@ export function route<C = unknown>(handler: Handler<C>): Handler<C> {
   };
 }
 
-/** Rejects cross-site state-changing requests (CSRF defence in depth on top of SameSite=Lax). */
+/**
+ * Rejects cross-site state-changing requests (CSRF defence in depth on top of SameSite=Lax).
+ * The Origin must match the Host the request arrived on, the forwarded host set by a reverse
+ * proxy, or the configured APP_URL. The scheme must match too wherever it is known: APP_URL's
+ * for its host, X-Forwarded-Proto's for the request hosts.
+ */
 export function assertSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return;
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  let originHost: string;
+  const header = request.headers.get("origin");
+  if (!header) return;
+  let origin: URL;
   try {
-    originHost = new URL(origin).host;
+    origin = new URL(header);
   } catch {
     throw new AppError("forbidden", "Invalid origin.");
   }
-  if (originHost !== host) throw new AppError("forbidden", "Cross-origin requests are not allowed.");
+  const first = (name: string) => request.headers.get(name)?.split(",")[0].trim().toLowerCase() || undefined;
+  let appUrl: URL | undefined;
+  try {
+    appUrl = new URL(process.env.APP_URL ?? "");
+  } catch {
+    // APP_URL not set or invalid
+  }
+
+  let allowed: boolean;
+  if (appUrl && origin.host === appUrl.host) {
+    allowed = origin.protocol === appUrl.protocol;
+  } else {
+    const proto = first("x-forwarded-proto");
+    allowed = [first("host"), first("x-forwarded-host")].includes(origin.host) && (!proto || origin.protocol === `${proto}:`);
+  }
+  if (!allowed) throw new AppError("forbidden", "Cross-origin requests are not allowed.");
 }
 
 export async function readJson(request: Request): Promise<unknown> {
