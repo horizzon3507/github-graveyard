@@ -22,4 +22,12 @@ describe("assertSameOrigin", () => {
     expect(() => assertSameOrigin(req({ origin: "https://evil.com", host: "internal:3000", "x-forwarded-host": "app.example.com" }))).toThrowError(/Cross-origin/);
     expect(() => assertSameOrigin(req({ origin: "not a url", host: "x" }))).toThrowError(/Invalid origin/);
   });
+
+  it("rejects a different scheme on an allowed host", () => {
+    expect(() => assertSameOrigin(req({ origin: "http://app.example.com", host: "internal:3000", "x-forwarded-host": "app.example.com", "x-forwarded-proto": "https" }))).toThrowError(/Cross-origin/);
+    expect(() => assertSameOrigin(req({ origin: "https://app.example.com", host: "internal:3000", "x-forwarded-host": "app.example.com", "x-forwarded-proto": "https" }))).not.toThrow();
+    vi.stubEnv("APP_URL", "https://app.example.com");
+    expect(() => assertSameOrigin(req({ origin: "http://app.example.com", host: "app.example.com" }))).toThrowError(/Cross-origin/);
+    expect(() => assertSameOrigin(req({ origin: "http://app.example.com", host: "internal:3000", "x-forwarded-host": "app.example.com" }))).toThrowError(/Cross-origin/);
+  });
 });
