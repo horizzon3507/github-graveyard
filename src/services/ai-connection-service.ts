@@ -70,6 +70,16 @@ function readStored(row: AiConnection): Stored {
   return JSON.parse(decrypt(row.data, env().ENCRYPTION_KEY)) as Stored;
 }
 
+/** Null when the credentials cannot be read, e.g. after ENCRYPTION_KEY was rotated. */
+function readChatGPTCreds(row: AiConnection): ChatGPTCredentials | null {
+  try {
+    const stored = readStored(row);
+    return stored.kind === "CHATGPT" ? stored.creds : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Creates or updates the visitor's connection. Returns a cookie value only when a new one is minted. */
 async function persist(existing: AiConnection | null, fields: { kind: string; provider: string; label: string | null; model: string | null; stored: Stored; expiresAt: Date | null }) {
   const data = encrypt(JSON.stringify(fields.stored), env().ENCRYPTION_KEY);
@@ -110,7 +120,7 @@ export function startChatGPT(request: Request, existing: AiConnection | null) {
   const redirectUri = localRedirectUri(local ? local[1] : REMOTE_CALLBACK_PORT);
 
   let creds: ChatGPTCredentials | null = null;
-  if (existing?.kind === "CHATGPT") creds = (readStored(existing) as Extract<Stored, { kind: "CHATGPT" }>).creds;
+  if (existing?.kind === "CHATGPT") creds = readChatGPTCreds(existing);
   const pending = newPendingAuthorization(redirectUri, mode, creds?.clientId ?? null);
   const hostId = deriveHostId(env().ENCRYPTION_KEY);
   // The URL is returned to browser JavaScript, so the stored ID token is not sent as id_token_hint.
@@ -151,7 +161,8 @@ async function chatgptAccessToken(row: AiConnection): Promise<string> {
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${row.id}))`;
       const fresh = await tx.aiConnection.findUnique({ where: { id: row.id } });
-      if (!fresh) throw new AppError("unauthorized", "The AI connection was removed.");
+      // An API key may have replaced the ChatGPT connection while this call waited; saving a key does not take this lock.
+      if (!fresh || fresh.kind !== "CHATGPT") throw new AppError("unauthorized", "The AI connection changed. Try again.");
       const current = (readStored(fresh) as Extract<Stored, { kind: "CHATGPT" }>).creds;
       if (current.expiresAt - Date.now() > REFRESH_MARGIN_MS) return current.accessToken;
       let refreshed: ChatGPTCredentials;
@@ -159,12 +170,12 @@ async function chatgptAccessToken(row: AiConnection): Promise<string> {
         refreshed = await refreshCredentials(current);
       } catch (error) {
         if (error instanceof AppError && error.details?.oauth === "invalid_grant") {
-          await tx.aiConnection.delete({ where: { id: row.id } });
+          await tx.aiConnection.deleteMany({ where: { id: row.id, kind: "CHATGPT" } });
           return null;
         }
         throw error;
       }
-      await tx.aiConnection.update({ where: { id: row.id }, data: { data: encrypt(JSON.stringify({ kind: "CHATGPT", creds: refreshed } satisfies Stored), env().ENCRYPTION_KEY), expiresAt: new Date(refreshed.expiresAt) } });
+      await tx.aiConnection.updateMany({ where: { id: row.id, kind: "CHATGPT" }, data: { data: encrypt(JSON.stringify({ kind: "CHATGPT", creds: refreshed } satisfies Stored), env().ENCRYPTION_KEY), expiresAt: new Date(refreshed.expiresAt) } });
       return refreshed.accessToken;
     },
     { timeout: 30_000 },
@@ -190,8 +201,8 @@ export async function touch(row: AiConnection) {
 
 export async function disconnect(row: AiConnection) {
   if (row.kind === "CHATGPT") {
-    const stored = readStored(row);
-    if (stored.kind === "CHATGPT") await revokeRefreshToken(stored.creds);
+    const creds = readChatGPTCreds(row);
+    if (creds) await revokeRefreshToken(creds);
   }
   await db.aiConnection.delete({ where: { id: row.id } });
 }

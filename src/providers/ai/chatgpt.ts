@@ -262,6 +262,9 @@ export async function readResponsesStream(body: ReadableStream<Uint8Array>): Pro
     else if (event.type === "response.completed") completed = true;
     else if (event.type === "response.failed") {
       const code = event.response?.error?.code ?? "unknown_error";
+      if (code === "subscription_sharing_usage_unavailable") {
+        throw new AppError("github_unavailable", "ChatGPT could not check your plan usage right now. Try again in a few minutes.");
+      }
       if (code.startsWith("subscription_sharing_usage")) {
         throw new AppError("rate_limited", "Your ChatGPT plan's usage limit for apps was reached. Try again later or raise the limit in ChatGPT Settings → Usage.");
       }

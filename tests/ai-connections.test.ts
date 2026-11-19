@@ -101,6 +101,7 @@ describe("Responses stream", () => {
 
   it("maps plan usage limits to a rate-limit error and rejects incomplete streams", async () => {
     await expect(readResponsesStream(sse([{ type: "response.failed", response: { error: { code: "subscription_sharing_usage_limit_exceeded" } } }]))).rejects.toMatchObject({ code: "rate_limited" });
+    await expect(readResponsesStream(sse([{ type: "response.failed", response: { error: { code: "subscription_sharing_usage_unavailable" } } }]))).rejects.toMatchObject({ code: "github_unavailable" });
     await expect(readResponsesStream(sse([{ type: "response.output_text.delta", delta: "partial" }]))).rejects.toThrow(/before completion/);
     await expect(readResponsesStream(sse([{ type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } }]))).rejects.toThrow(/cut short/);
   });
