@@ -38,6 +38,25 @@ pnpm dev                       # http://localhost:3000
 
 Quick scans use repository metadata only. Opening a repository (or running `pnpm jobs:refresh`) upgrades it to a **full analysis**.
 
+### Run with Docker
+
+The repo ships a multi-stage `Dockerfile` (Next.js standalone output) and an
+`app` service in `docker-compose.yml`:
+
+```bash
+docker compose up -d --build        # db + app on http://localhost:3000
+```
+
+Apply migrations once the database is up, from any checkout of the repo:
+`pnpm db:deploy` (locally, against localhost:5432) or
+`docker compose run --rm app npx prisma migrate deploy` is not available in the
+standalone image, so prefer running migrations from a host checkout.
+
+For other platforms the app is a standard Next.js server: `pnpm build` then
+`pnpm start`. Note the in-memory rate limiter and analysis concurrency assume a
+single instance; scale out by moving the limiter to Redis first
+(see docs/architecture.md).
+
 ### Configure GitHub access
 
 **1. API token (recommended).** Unauthenticated requests are limited to 60 per hour, enough for a couple of full analyses. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with **no extra permissions** (public repositories only) and set `GITHUB_TOKEN`. That lifts the limit to 5,000 requests per hour. The token is read only on the server (`src/lib/env.ts`, `src/services/github.ts`) and is never sent to the browser.

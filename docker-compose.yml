@@ -16,5 +16,17 @@ services:
       timeout: 3s
       retries: 10
 
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://graveyard:graveyard@db:5432/graveyard?schema=public
+      APP_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+
 volumes:
   graveyard-data:

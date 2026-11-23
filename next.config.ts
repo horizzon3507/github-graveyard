@@ -30,6 +30,8 @@ if (process.env.APP_URL?.startsWith("https://")) {
 }
 
 const nextConfig: NextConfig = {
+  // Self-contained server for the Docker image (see Dockerfile).
+  output: "standalone",
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
