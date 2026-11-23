@@ -26,8 +26,8 @@ Next.js 16 (App Router, Server Components), React 19, TypeScript, Tailwind CSS 4
 Requirements: Node.js 20+ (developed on 24), pnpm, Docker (or any PostgreSQL 14+).
 
 ```bash
-pnpm install                   # also runs `prisma generate`
 cp .env.example .env           # then edit it (see below)
+pnpm install                   # also runs `prisma generate`
 docker compose up -d db        # PostgreSQL on localhost:5432
 pnpm db:deploy                 # apply migrations
 pnpm ingest                    # seed the graveyard with real repositories from GitHub
