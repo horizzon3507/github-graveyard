@@ -47,6 +47,10 @@ The repo ships a multi-stage `Dockerfile` (Next.js standalone output) and an
 docker compose up -d --build        # db + app on http://localhost:3000
 ```
 
+The `app` service only gets the variables listed in `docker-compose.yml`. To use
+[Your AI](#your-ai-chatgpt-plan-or-your-own-key), set `ENCRYPTION_KEY` in your shell or in `.env`
+before `docker compose up` (`openssl rand -base64 32`); compose passes it through.
+
 Apply migrations once the database is up, from any checkout of the repo:
 `pnpm db:deploy` (locally, against localhost:5432) or
 `docker compose run --rm app npx prisma migrate deploy` is not available in the
