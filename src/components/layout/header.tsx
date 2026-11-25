@@ -11,6 +11,7 @@ export const NAV_LINKS = [
   { href: "/hidden-gems", label: "Hidden Gems" },
   { href: "/legendary", label: "Legendary" },
   { href: "/methodology", label: "Methodology" },
+  { href: "/settings/ai", label: "Your AI" },
 ];
 
 export async function Header() {

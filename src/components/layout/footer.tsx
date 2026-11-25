@@ -19,6 +19,7 @@ export function Footer() {
           <Link href="/methodology" className="hover:text-foreground">How scores work</Link>
           <Link href="/random" prefetch={false} className="hover:text-foreground">Random Grave</Link>
           <Link href="/collections" className="hover:text-foreground">Collections</Link>
+          <Link href="/settings/ai" className="hover:text-foreground">Your AI</Link>
         </nav>
       </div>
     </footer>

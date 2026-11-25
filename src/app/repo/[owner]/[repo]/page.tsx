@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { after } from "next/server";
+import { cookies } from "next/headers";
 import { StateMessage, formatReset } from "@/components/graveyard/states";
 import { db } from "@/database/client";
 import { getRepositoryDetail } from "@/database/repository-detail";
@@ -27,6 +28,8 @@ import { Section } from "@/features/repo/section";
 import { AnalysisBanner, StatusBanner } from "@/features/repo/status-banner";
 import { Timeline } from "@/features/repo/timeline";
 import { SaveButton } from "@/features/collections/save-button";
+import { InsightPanel } from "@/features/ai/insight-panel";
+import { AI_COOKIE, getAiStatus } from "@/services/ai-connection-service";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +45,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 const NAV = [
   ["scores", "Scores"],
+  ["insight", "AI insight"],
   ["timeline", "Timeline"],
   ["activity", "Activity"],
   ["why", "Why abandoned"],
@@ -118,6 +122,7 @@ export default async function RepoPage({ params }: Params) {
       })
     : [];
 
+  const aiStatus = await getAiStatus((await cookies()).get(AI_COOKIE)?.value).catch(() => null);
   const [collections, memberOf] = user ? await Promise.all([listCollections(user.id), collectionsContaining(user.id, detail.id)]) : [[], []];
 
   return (
@@ -170,6 +175,10 @@ export default async function RepoPage({ params }: Params) {
 
               <Section id="scores" title="Scores" automatic>
                 <ScoresSection analysis={analysis} />
+              </Section>
+
+              <Section id="insight" title="AI insight" description="Optional. Uses your own ChatGPT plan or API key.">
+                <InsightPanel repo={`${detail.owner}/${detail.name}`} connected={Boolean(aiStatus?.connection)} label={aiStatus?.connection?.label ?? null} />
               </Section>
 
               <Section id="timeline" title="Timeline" description="From the first commit to the last sign of life." automatic>

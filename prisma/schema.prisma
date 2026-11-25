@@ -297,3 +297,19 @@ model CacheEntry {
 
   @@index([expiresAt])
 }
+
+model AiConnection {
+  id         String    @id @default(cuid())
+  secretHash String    @unique
+  kind       String
+  provider   String
+  label      String?
+  model      String?
+  data       String
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastUsedAt DateTime?
+
+  @@index([updatedAt])
+}

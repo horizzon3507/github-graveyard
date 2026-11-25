@@ -25,6 +25,8 @@ services:
     environment:
       DATABASE_URL: postgresql://graveyard:graveyard@db:5432/graveyard?schema=public
       APP_URL: http://localhost:3000
+      # Needed for "Your AI" (/settings/ai). Read from your shell or .env; empty leaves it off.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     ports:
       - "3000:3000"
 
