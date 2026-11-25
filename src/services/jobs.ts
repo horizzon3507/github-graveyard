@@ -3,7 +3,7 @@ import { db } from "@/database/client";
 import { env } from "@/lib/env";
 import { thresholds } from "@/config/graveyard";
 import { ALGORITHM_VERSION } from "@/analysis/analyze";
-import { requestDeepAnalysis, runDeepAnalysis } from "@/services/analysis-service";
+import { FAILURE_RETRY_MS, requestDeepAnalysis, runDeepAnalysis } from "@/services/analysis-service";
 import { recomputeQuickAnalyses } from "@/services/repository-service";
 
 export interface RefreshResult {
@@ -27,7 +27,10 @@ export async function refreshAnalyses(limit = 10, now = new Date()): Promise<Ref
       analysis: {
         is: {
           OR: [{ depth: "QUICK" }, { algorithmVersion: { lt: ALGORITHM_VERSION } }, { lastAnalyzedAt: { lt: staleBefore } }],
-          NOT: { status: "RUNNING", startedAt: { gt: new Date(now.getTime() - 10 * 60_000) } },
+          NOT: [
+            { status: "RUNNING", startedAt: { gt: new Date(now.getTime() - 10 * 60_000) } },
+            { status: "FAILED", updatedAt: { gt: new Date(now.getTime() - FAILURE_RETRY_MS) } },
+          ],
         },
       },
     },

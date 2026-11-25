@@ -8,7 +8,7 @@ import { env, isGitHubOAuthConfigured } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { safeRelativePath } from "@/lib/validation";
 
-export const SESSION_COOKIE = "gg_session";
+const SESSION_COOKIE_BASE = "gg_session";
 export const OAUTH_COOKIE = "gg_oauth";
 const SESSION_DAYS = 30;
 
@@ -17,8 +17,15 @@ export type SessionUser = Omit<User, "githubId">;
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 const secure = () => env().APP_URL.startsWith("https://");
 
+/**
+ * In production the cookie gets the `__Host-` prefix, which pins it to this
+ * host (requires Secure, Path=/ and no Domain) and blocks sibling-subdomain
+ * injection. Plain name on http://localhost so dev sign-in keeps working.
+ */
+export const sessionCookieName = () => (secure() ? `__Host-${SESSION_COOKIE_BASE}` : SESSION_COOKIE_BASE);
+
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(sessionCookieName())?.value;
   if (!token || token.length > 128) return null;
   const session = await db.session.findUnique({ where: { tokenHash: hash(token) }, include: { user: true } });
   if (!session || session.expiresAt < new Date()) return null;

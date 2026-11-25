@@ -11,7 +11,7 @@ import { getAIProvider } from "@/providers/ai";
 import { analysisColumns, j, upsertRepository } from "@/services/repository-service";
 
 const STALE_RUN_MS = 10 * 60_000;
-const FAILURE_RETRY_MS = 15 * 60_000;
+export const FAILURE_RETRY_MS = 15 * 60_000;
 const running = new Set<string>();
 
 export type AnalysisRequestOutcome = "started" | "running" | "fresh" | "deferred" | "backoff";

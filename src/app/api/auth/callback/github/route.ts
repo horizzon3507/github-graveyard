@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { completeLogin, OAUTH_COOKIE, readOAuthCookie, SESSION_COOKIE, sessionCookieOptions } from "@/services/auth-service";
+import { completeLogin, OAUTH_COOKIE, readOAuthCookie, sessionCookieName, sessionCookieOptions } from "@/services/auth-service";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { isAppError } from "@/lib/errors";
 
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   try {
     const token = await completeLogin(code);
     const response = NextResponse.redirect(new URL(cookie.next, base));
-    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+    response.cookies.set(sessionCookieName(), token, sessionCookieOptions());
     response.cookies.delete(OAUTH_COOKIE);
     return response;
   } catch (error) {

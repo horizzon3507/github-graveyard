@@ -26,8 +26,8 @@ Next.js 16 (App Router, Server Components), React 19, TypeScript, Tailwind CSS 4
 Requirements: Node.js 20+ (developed on 24), pnpm, Docker (or any PostgreSQL 14+).
 
 ```bash
-pnpm install                   # also runs `prisma generate`
 cp .env.example .env           # then edit it (see below)
+pnpm install                   # also runs `prisma generate`
 docker compose up -d db        # PostgreSQL on localhost:5432
 pnpm db:deploy                 # apply migrations
 pnpm ingest                    # seed the graveyard with real repositories from GitHub
@@ -37,6 +37,25 @@ pnpm dev                       # http://localhost:3000
 `pnpm ingest` runs the search plan in `src/services/discovery.ts` (legendary, archived, buried, hidden-gem and per-topic/language queries) and stores a **quick scan** for each result. Pass a number to limit the queries, for example `pnpm ingest 8`. Without `GITHUB_TOKEN` it is throttled to GitHub's 10 searches per minute.
 
 Quick scans use repository metadata only. Opening a repository (or running `pnpm jobs:refresh`) upgrades it to a **full analysis**.
+
+### Run with Docker
+
+The repo ships a multi-stage `Dockerfile` (Next.js standalone output) and an
+`app` service in `docker-compose.yml`:
+
+```bash
+docker compose up -d --build        # db + app on http://localhost:3000
+```
+
+Apply migrations once the database is up, from any checkout of the repo:
+`pnpm db:deploy` (locally, against localhost:5432) or
+`docker compose run --rm app npx prisma migrate deploy` is not available in the
+standalone image, so prefer running migrations from a host checkout.
+
+For other platforms the app is a standard Next.js server: `pnpm build` then
+`pnpm start`. Note the in-memory rate limiter and analysis concurrency assume a
+single instance; scale out by moving the limiter to Redis first
+(see docs/architecture.md).
 
 ### Configure GitHub access
 
